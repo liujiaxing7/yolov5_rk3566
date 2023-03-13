@@ -298,6 +298,8 @@ int main(int argc, char **argv)
     post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
                  box_conf_threshold, nms_threshold, scale_w, scale_h, out_zps, out_scales, &detect_result_group);
 
+//    detect_result_group = NMS(detect_result_group, 0.4);
+
     // Draw Objects
     char text[256];
     for (int i = 0; i < detect_result_group.count; i++)
@@ -314,6 +316,15 @@ int main(int argc, char **argv)
         int y2 = det_result->box.bottom;
         rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255, 0, 0, 255), 3);
         putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+
+        std::vector<cv::Scalar> pointColor= {cv::Scalar(255, 255, 255), cv::Scalar(0, 255, 0),
+                                             cv::Scalar(0, 0, 255), cv::Scalar(255, 255, 0)};
+        for (int i = 0; i < 4; ++i)
+        {
+            cv::circle(orig_img, cv::Point(det_result->box.keypoint.point[i * 2]
+                               , det_result->box.keypoint.point[i * 2 + 1]), 3
+                    , pointColor[i], -1);
+        }
     }
 
     imwrite("./out.jpg", orig_img);

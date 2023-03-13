@@ -21,7 +21,10 @@
 #include <set>
 #include "postprocess.h"
 #include <stdint.h>
-#define LABEL_NALE_TXT_PATH "./model/rubby.txt"
+#include <algorithm>
+#include <opencv2/core/types.hpp>
+
+#define LABEL_NALE_TXT_PATH "/root/ljdong/ljx/yolov5_rk3566/model/rubby.txt"
 
 static char *labels[OBJ_CLASS_NUM];
 
@@ -111,6 +114,7 @@ static float CalculateOverlap(float xmin0, float ymin0, float xmax0, float ymax0
 
 static int nms(int validCount, std::vector<float> &outputLocations, std::vector<int> classIds, std::vector<int> &order,int filterId, float threshold)
 {
+    const int boxLength = 12;
     for (int i = 0; i < validCount; ++i)
     {
         if (order[i] == -1|| classIds[i] != filterId)
@@ -125,15 +129,16 @@ static int nms(int validCount, std::vector<float> &outputLocations, std::vector<
             {
                 continue;
             }
-            float xmin0 = outputLocations[n * 4 + 0];
-            float ymin0 = outputLocations[n * 4 + 1];
-            float xmax0 = outputLocations[n * 4 + 0] + outputLocations[n * 4 + 2];
-            float ymax0 = outputLocations[n * 4 + 1] + outputLocations[n * 4 + 3];
 
-            float xmin1 = outputLocations[m * 4 + 0];
-            float ymin1 = outputLocations[m * 4 + 1];
-            float xmax1 = outputLocations[m * 4 + 0] + outputLocations[m * 4 + 2];
-            float ymax1 = outputLocations[m * 4 + 1] + outputLocations[m * 4 + 3];
+            float xmin0 = outputLocations[n * boxLength + 0];
+            float ymin0 = outputLocations[n * boxLength + 1];
+            float xmax0 = outputLocations[n * boxLength + 0] + outputLocations[n * boxLength + 2];
+            float ymax0 = outputLocations[n * boxLength + 1] + outputLocations[n * boxLength + 3];
+
+            float xmin1 = outputLocations[m * boxLength + 0];
+            float ymin1 = outputLocations[m * boxLength + 1];
+            float xmax1 = outputLocations[m * boxLength + 0] + outputLocations[m * boxLength + 2];
+            float ymax1 = outputLocations[m * boxLength + 1] + outputLocations[m * boxLength + 3];
 
             float iou = CalculateOverlap(xmin0, ymin0, xmax0, ymax0, xmin1, ymin1, xmax1, ymax1);
 
@@ -144,6 +149,75 @@ static int nms(int validCount, std::vector<float> &outputLocations, std::vector<
         }
     }
     return 0;
+}
+bool sort_score(detect_result_t box1,detect_result_t box2){
+    return box1.prop > box2.prop ? true : false;
+}
+float IoU(cv::Rect box0, cv::Rect box1)
+{
+    float xmin0 = box0.x;
+    float ymin0 = box0.y;
+    float xmax0 = box0.x + box0.width;
+    float ymax0 = box0.y + box0.height;
+
+    float xmin1 = box1.x;
+    float ymin1 = box1.y;
+    float xmax1 = box1.x + box1.width;
+    float ymax1 = box1.y + box1.height;
+
+    float w = fmax(0.0f, fmin(xmax0, xmax1) - fmax(xmin0, xmin1));
+    float h = fmax(0.0f, fmin(ymax0, ymax1) - fmax(ymin0, ymin1));
+
+    float i = w * h;
+    float u = (xmax0 - xmin0) * (ymax0 - ymin0) +
+              (xmax1 - xmin1) * (ymax1 - ymin1) - i;
+
+    if (u <= 0.0) return 0.0f;
+    else return i / u;
+}
+detect_result_group_t NMS(detect_result_group_t &boxes, float threshold)
+{
+    int N = boxes.count;
+    std::vector<int> labels(N, -1);
+
+//    std::sort(boxes.begin(),boxes.end(),sort_score);
+
+    for (int i = 0; i < N - 1; ++i)
+    {
+        for (int j = i + 1; j < N; ++j)
+        {
+            BOX_RECT pre_box = boxes.results[i].box;
+            cv::Rect pre_box_rect;
+            pre_box_rect.x = pre_box.left;
+            pre_box_rect.y = pre_box.top;
+            pre_box_rect.width = pre_box.right-pre_box.left;
+            pre_box_rect.height = pre_box.top-pre_box.bottom;
+
+            BOX_RECT cur_box = boxes.results[j].box;
+            cv::Rect cur_box_rect;
+            cur_box_rect.x = cur_box.left;
+            cur_box_rect.y = cur_box.top;
+            cur_box_rect.width = cur_box.right-cur_box.left;
+            cur_box_rect.height = cur_box.top-cur_box.bottom;
+
+
+            float iou_ = IoU(pre_box_rect, cur_box_rect);
+            if (iou_ > threshold)
+            {
+                labels[j] = 0;
+            }
+        }
+    }
+
+    detect_result_group_t boxesTemp;
+
+    for (int i = 0; i < N; ++i)
+    {
+        if (labels[i] == -1)
+            boxesTemp.results[i] = boxes.results[i];
+            boxesTemp.count+=1;
+    }
+    return boxesTemp;
 }
 
 static int quick_sort_indice_inverse(
@@ -220,16 +294,18 @@ static int process(int8_t *input, int *anchor, int grid_h, int grid_w, int heigh
     int grid_len = grid_h * grid_w;
     float thres = unsigmoid(threshold);
     int8_t thres_i8 = qnt_f32_to_affine(thres, zp, scale);
+
+    int itemLength = OBJ_CLASS_NUM + 5 + 8;
     for (int a = 0; a < 3; a++)
     {
         for (int i = 0; i < grid_h; i++)
         {
             for (int j = 0; j < grid_w; j++)
             {
-                int8_t box_confidence = input[(PROP_BOX_SIZE * a + 4) * grid_len + i * grid_w + j];
+                int8_t box_confidence = input[(itemLength * a + 4) * grid_len + i * grid_w + j];
                 if (box_confidence >= thres_i8)
                 {
-                    int offset = (PROP_BOX_SIZE * a) * grid_len + i * grid_w + j;
+                    int offset = (itemLength * a) * grid_len + i * grid_w + j;
                     int8_t *in_ptr = input + offset;
                     float box_x = sigmoid(deqnt_affine_to_f32(*in_ptr, zp, scale)) * 2.0 - 0.5;
                     float box_y = sigmoid(deqnt_affine_to_f32(in_ptr[grid_len], zp, scale)) * 2.0 - 0.5;
@@ -245,6 +321,18 @@ static int process(int8_t *input, int *anchor, int grid_h, int grid_w, int heigh
                     boxes.push_back(box_y);
                     boxes.push_back(box_w);
                     boxes.push_back(box_h);
+
+                    for (int m = 0; m < 4; ++m)
+                    {
+                        float point_x = sigmoid(deqnt_affine_to_f32(in_ptr[(itemLength -8 + m * 2) * grid_len], zp, scale)) * 4.0 -2.0;
+                        float point_y = sigmoid(deqnt_affine_to_f32(in_ptr[(itemLength -8 + m * 2 + 1) * grid_len], zp, scale)) * 4.0 -2.0;
+
+                        point_x = point_x * (float) anchor[a * 2] + j * (float) stride ;
+                        point_y = point_y * (float) anchor[a * 2 + 1] + i * (float) stride;
+
+                        boxes.push_back(point_x);
+                        boxes.push_back(point_y);
+                    }
 
                     int8_t maxClassProbs = in_ptr[5 * grid_len];
                     int maxClassId = 0;
@@ -327,7 +415,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
         indexArray.push_back(i);
     }
 
-    quick_sort_indice_inverse(objProbs, 0, validCount - 1, indexArray);
+   // quick_sort_indice_inverse(objProbs, 0, validCount - 1, indexArray);
 
     std::set<int> class_set(std::begin(classId),std::end(classId));
     
@@ -346,11 +434,12 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
             continue;
         }
         int n = indexArray[i];
+        int boxLength=12;
 
-        float x1 = filterBoxes[n * 4 + 0];
-        float y1 = filterBoxes[n * 4 + 1];
-        float x2 = x1 + filterBoxes[n * 4 + 2];
-        float y2 = y1 + filterBoxes[n * 4 + 3];
+        float x1 = filterBoxes[n * boxLength + 0];
+        float y1 = filterBoxes[n * boxLength + 1];
+        float x2 = x1 + filterBoxes[n * boxLength + 2];
+        float y2 = y1 + filterBoxes[n * boxLength + 3];
         int id = classId[n];
         float obj_conf = objProbs[i];
 
@@ -359,6 +448,13 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
         group->results[last_count].box.right = (int)(clamp(x2, 0, model_in_w) / scale_w);
         group->results[last_count].box.bottom = (int)(clamp(y2, 0, model_in_h) / scale_h);
         group->results[last_count].prop = obj_conf;
+
+        Keypoint keypoint = {filterBoxes[n * boxLength + 4]/scale_w,filterBoxes[n * boxLength + 5] / scale_h,
+                             filterBoxes[n * boxLength + 6]/scale_w,filterBoxes[n * boxLength + 7] / scale_h,
+                             filterBoxes[n * boxLength + 8]/scale_w,filterBoxes[n * boxLength + 9] / scale_h,
+                             filterBoxes[n * boxLength + 10]/scale_w,filterBoxes[n * boxLength + 11] / scale_h};
+        group->results[last_count].box.keypoint = keypoint;
+
         char *label = labels[id];
         strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
 
