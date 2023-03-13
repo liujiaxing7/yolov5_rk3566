@@ -117,6 +117,27 @@ static int saveFloat(const char *file_name, float *output, int element_size)
 /*-------------------------------------------
                   Main Functions
 -------------------------------------------*/
+
+bool LetterBox(const cv::Mat src, cv::Mat &dst, const cv::Size size)
+{
+    int widthOrg = src.cols;
+    int heightOrg = src.rows;
+
+    float ratio = size.width / (float) MAX(widthOrg, heightOrg);
+
+    int widthUnpad = int(widthOrg * ratio);
+    int heightUnpad = int(heightOrg * ratio);
+
+    int widthPad = round(((size.width - widthUnpad) % 32) / 2);
+    int heightPad = 60;
+
+    cv::resize(src, dst, cv::Size(widthUnpad, heightUnpad));
+    cv::copyMakeBorder(dst, dst, heightPad, heightPad, widthPad, widthPad
+            , cv::BORDER_CONSTANT, cv::Scalar(128, 128, 128));
+
+    return false;
+}
+
 int main(int argc, char **argv)
 {
     int status = 0;
@@ -160,10 +181,15 @@ int main(int argc, char **argv)
         printf("cv::imread %s fail!\n", image_name);
         return -1;
     }
+    cv::Mat img1;
+    cv::cvtColor(orig_img, img1, cv::COLOR_BGR2RGB);
+
+
     cv::Mat img;
-    cv::cvtColor(orig_img, img, cv::COLOR_BGR2RGB);
+    LetterBox(img1, img, cv::Size(320, 320));
     img_width = img.cols;
     img_height = img.rows;
+
     printf("img width = %d, img height = %d\n", img_width, img_height);
 
     /* Create the neural network */
@@ -284,8 +310,8 @@ int main(int argc, char **argv)
            (__get_us(stop_time) - __get_us(start_time)) / 1000);
 
     //post process
-    float scale_w = (float)width / img_width;
-    float scale_h = (float)height / img_height;
+    float scale_w = (float)width / 640;
+    float scale_h = (float)height / 400;
 
     detect_result_group_t detect_result_group;
     std::vector<float> out_scales;
@@ -296,7 +322,7 @@ int main(int argc, char **argv)
         out_zps.push_back(output_attrs[i].zp);
     }
     post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
-                 box_conf_threshold, nms_threshold, scale_w, scale_h, out_zps, out_scales, &detect_result_group);
+                 box_conf_threshold, nms_threshold, scale_w, scale_w, out_zps, out_scales, &detect_result_group);
 
 //    detect_result_group = NMS(detect_result_group, 0.4);
 
@@ -349,7 +375,7 @@ int main(int argc, char **argv)
            (__get_us(stop_time) - __get_us(start_time)) / 1000.0 / test_count);
 
     deinitPostProcess();
-    
+
     // release
     ret = rknn_destroy(ctx);
 

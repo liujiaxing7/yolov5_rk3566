@@ -444,15 +444,15 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
         float obj_conf = objProbs[i];
 
         group->results[last_count].box.left = (int)(clamp(x1, 0, model_in_w) / scale_w);
-        group->results[last_count].box.top = (int)(clamp(y1, 0, model_in_h) / scale_h);
+        group->results[last_count].box.top = (int)(clamp(y1, 0, model_in_h) / scale_h) - 120 ;
         group->results[last_count].box.right = (int)(clamp(x2, 0, model_in_w) / scale_w);
-        group->results[last_count].box.bottom = (int)(clamp(y2, 0, model_in_h) / scale_h);
+        group->results[last_count].box.bottom = (int)(clamp(y2, 0, model_in_h) / scale_h) - 120;
         group->results[last_count].prop = obj_conf;
 
-        Keypoint keypoint = {filterBoxes[n * boxLength + 4]/scale_w,filterBoxes[n * boxLength + 5] / scale_h,
-                             filterBoxes[n * boxLength + 6]/scale_w,filterBoxes[n * boxLength + 7] / scale_h,
-                             filterBoxes[n * boxLength + 8]/scale_w,filterBoxes[n * boxLength + 9] / scale_h,
-                             filterBoxes[n * boxLength + 10]/scale_w,filterBoxes[n * boxLength + 11] / scale_h};
+        Keypoint keypoint = {filterBoxes[n * boxLength + 4]/scale_w,filterBoxes[n * boxLength + 5] / scale_h - 120,
+                             filterBoxes[n * boxLength + 6]/scale_w,filterBoxes[n * boxLength + 7] / scale_h - 120,
+                             filterBoxes[n * boxLength + 8]/scale_w,filterBoxes[n * boxLength + 9] / scale_h - 120,
+                             filterBoxes[n * boxLength + 10]/scale_w,filterBoxes[n * boxLength + 11] / scale_h-120};
         group->results[last_count].box.keypoint = keypoint;
 
         char *label = labels[id];
