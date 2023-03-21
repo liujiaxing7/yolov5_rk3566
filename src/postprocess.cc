@@ -175,12 +175,12 @@ float IoU(cv::Rect box0, cv::Rect box1)
     if (u <= 0.0) return 0.0f;
     else return i / u;
 }
-detect_result_group_t NMS(detect_result_group_t &boxes, float threshold)
+detect_result_group_t NMS(detect_result_group_t boxes, float threshold)
 {
     int N = boxes.count;
     std::vector<int> labels(N, -1);
 
-//    std::sort(boxes.begin(),boxes.end(),sort_score);
+//    std::sort(boxes.results.begin(),boxes.end(),sort_score);
 
     for (int i = 0; i < N - 1; ++i)
     {
@@ -191,14 +191,14 @@ detect_result_group_t NMS(detect_result_group_t &boxes, float threshold)
             pre_box_rect.x = pre_box.left;
             pre_box_rect.y = pre_box.top;
             pre_box_rect.width = pre_box.right-pre_box.left;
-            pre_box_rect.height = pre_box.top-pre_box.bottom;
+            pre_box_rect.height = pre_box.bottom-pre_box.top;
 
             BOX_RECT cur_box = boxes.results[j].box;
             cv::Rect cur_box_rect;
             cur_box_rect.x = cur_box.left;
             cur_box_rect.y = cur_box.top;
             cur_box_rect.width = cur_box.right-cur_box.left;
-            cur_box_rect.height = cur_box.top-cur_box.bottom;
+            cur_box_rect.height = cur_box.bottom-cur_box.top;
 
 
             float iou_ = IoU(pre_box_rect, cur_box_rect);
@@ -210,6 +210,9 @@ detect_result_group_t NMS(detect_result_group_t &boxes, float threshold)
     }
 
     detect_result_group_t boxesTemp;
+    if (boxesTemp.count) {
+        memset(&boxesTemp, 0, sizeof(detect_result_group_t));
+    }
 
     for (int i = 0; i < N; ++i)
     {
@@ -415,7 +418,7 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
         indexArray.push_back(i);
     }
 
-   // quick_sort_indice_inverse(objProbs, 0, validCount - 1, indexArray);
+//    quick_sort_indice_inverse(objProbs, 0, validCount - 1, indexArray);
 
     std::set<int> class_set(std::begin(classId),std::end(classId));
     
@@ -455,8 +458,8 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
                              filterBoxes[n * boxLength + 10]/scale_w,filterBoxes[n * boxLength + 11] / scale_h-120};
         group->results[last_count].box.keypoint = keypoint;
 
-        char *label = labels[id];
-        strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
+//        char *label = labels[id];
+//        strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
 
         // printf("result %2d: (%4d, %4d, %4d, %4d), %s\n", i, group->results[last_count].box.left, group->results[last_count].box.top,
         //        group->results[last_count].box.right, group->results[last_count].box.bottom, label);

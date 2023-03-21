@@ -20,6 +20,15 @@
 #include <string.h>
 #include <sys/time.h>
 #include <dlfcn.h>
+#include <iostream>
+//#include "npu_rk/model_npu_rk.h"
+#include <opencv2/highgui.hpp>
+#include<sys/time.h>
+#include <ctime>
+#include <unistd.h>
+#include <rknn_api.h>
+#include <opencv2/imgproc.hpp>
+#include "fstream"
 
 #define _BASETSD_H
 
@@ -138,6 +147,26 @@ bool LetterBox(const cv::Mat src, cv::Mat &dst, const cv::Size size)
     return false;
 }
 
+void ReadFile(std::string srcFile, std::vector<std::string> &image_files) {
+
+    if (not access(srcFile.c_str(), 0) == 0) {
+        return;
+    }
+
+    std::ifstream fin(srcFile.c_str());
+
+    if (!fin.is_open()) {
+        exit(0);
+    }
+
+    std::string s;
+    while (getline(fin, s)) {
+        image_files.push_back(s);
+    }
+
+    fin.close();
+}
+
 int main(int argc, char **argv)
 {
     int status = 0;
@@ -172,33 +201,16 @@ int main(int argc, char **argv)
            box_conf_threshold, nms_threshold);
 
     model_name = (char *)argv[1];
-    char *image_name = argv[2];
-
-    printf("Read %s ...\n", image_name);
-    cv::Mat orig_img = cv::imread(image_name, 1);
-    if (!orig_img.data)
-    {
-        printf("cv::imread %s fail!\n", image_name);
-        return -1;
-    }
-    cv::Mat img1;
-    cv::cvtColor(orig_img, img1, cv::COLOR_BGR2RGB);
-
-
-    cv::Mat img;
-    LetterBox(img1, img, cv::Size(320, 320));
-    img_width = img.cols;
-    img_height = img.rows;
-
-    printf("img width = %d, img height = %d\n", img_width, img_height);
-
+    std::string imagesTxt = argv[2];
+    std::vector<std::string> imageNameList;
+    ReadFile(imagesTxt, imageNameList);
+    const size_t size = imageNameList.size();
     /* Create the neural network */
     printf("Loading mode...\n");
     int model_data_size = 0;
     unsigned char *model_data = load_model(model_name, &model_data_size);
     ret = rknn_init(&ctx, model_data, model_data_size, 0, NULL);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("rknn_init error ret=%d\n", ret);
         return -1;
     }
@@ -206,8 +218,7 @@ int main(int argc, char **argv)
     rknn_sdk_version version;
     ret = rknn_query(ctx, RKNN_QUERY_SDK_VERSION, &version,
                      sizeof(rknn_sdk_version));
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("rknn_init error ret=%d\n", ret);
         return -1;
     }
@@ -216,8 +227,7 @@ int main(int argc, char **argv)
 
     rknn_input_output_num io_num;
     ret = rknn_query(ctx, RKNN_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("rknn_init error ret=%d\n", ret);
         return -1;
     }
@@ -226,13 +236,11 @@ int main(int argc, char **argv)
 
     rknn_tensor_attr input_attrs[io_num.n_input];
     memset(input_attrs, 0, sizeof(input_attrs));
-    for (int i = 0; i < io_num.n_input; i++)
-    {
+    for (int i = 0; i < io_num.n_input; i++) {
         input_attrs[i].index = i;
         ret = rknn_query(ctx, RKNN_QUERY_INPUT_ATTR, &(input_attrs[i]),
                          sizeof(rknn_tensor_attr));
-        if (ret < 0)
-        {
+        if (ret < 0) {
             printf("rknn_init error ret=%d\n", ret);
             return -1;
         }
@@ -241,8 +249,7 @@ int main(int argc, char **argv)
 
     rknn_tensor_attr output_attrs[io_num.n_output];
     memset(output_attrs, 0, sizeof(output_attrs));
-    for (int i = 0; i < io_num.n_output; i++)
-    {
+    for (int i = 0; i < io_num.n_output; i++) {
         output_attrs[i].index = i;
         ret = rknn_query(ctx, RKNN_QUERY_OUTPUT_ATTR, &(output_attrs[i]),
                          sizeof(rknn_tensor_attr));
@@ -252,15 +259,12 @@ int main(int argc, char **argv)
     int channel = 3;
     int width = 0;
     int height = 0;
-    if (input_attrs[0].fmt == RKNN_TENSOR_NCHW)
-    {
+    if (input_attrs[0].fmt == RKNN_TENSOR_NCHW) {
         printf("model is NCHW input fmt\n");
         channel = input_attrs[0].dims[1];
         width = input_attrs[0].dims[2];
         height = input_attrs[0].dims[3];
-    }
-    else
-    {
+    } else {
         printf("model is NHWC input fmt\n");
         width = input_attrs[0].dims[1];
         height = input_attrs[0].dims[2];
@@ -270,124 +274,110 @@ int main(int argc, char **argv)
     printf("model input height=%d, width=%d, channel=%d\n", height, width,
            channel);
 
-    rknn_input inputs[1];
-    memset(inputs, 0, sizeof(inputs));
-    inputs[0].index = 0;
-    inputs[0].type = RKNN_TENSOR_UINT8;
-    inputs[0].size = width * height * channel;
-    inputs[0].fmt = RKNN_TENSOR_NHWC;
-    inputs[0].pass_through = 0;
-
-    void *resize_buf = malloc(height * width * channel);
-
-    src = wrapbuffer_virtualaddr((void *)img.data, img_width, img_height, RK_FORMAT_RGB_888);
-    dst = wrapbuffer_virtualaddr((void *)resize_buf, width, height, RK_FORMAT_RGB_888);
-    ret = imcheck(src, dst, src_rect, dst_rect);
-    if (IM_STATUS_NOERROR != ret)
-    {
-        printf("%d, check error! %s", __LINE__, imStrError((IM_STATUS)ret));
-        return -1;
-    }
-    IM_STATUS STATUS = imresize(src, dst);
-    cv::Mat resize_img(cv::Size(width, height), CV_8UC3, resize_buf);
-    cv::imwrite("resize_input.jpg", resize_img);
-
-    inputs[0].buf = resize_buf;
-    gettimeofday(&start_time, NULL);
-    rknn_inputs_set(ctx, io_num.n_input, inputs);
-
-    rknn_output outputs[io_num.n_output];
-    memset(outputs, 0, sizeof(outputs));
-    for (int i = 0; i < io_num.n_output; i++)
-    {
-        outputs[i].want_float = 0;
-    }
-
-    ret = rknn_run(ctx, NULL);
-    ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
-    gettimeofday(&stop_time, NULL);
-    printf("once run use %f ms\n",
-           (__get_us(stop_time) - __get_us(start_time)) / 1000);
-
-    //post process
-    float scale_w = (float)width / 640;
-    float scale_h = (float)height / 400;
-
-    detect_result_group_t detect_result_group;
-    std::vector<float> out_scales;
-    std::vector<int32_t> out_zps;
-    for (int i = 0; i < io_num.n_output; ++i)
-    {
-        out_scales.push_back(output_attrs[i].scale);
-        out_zps.push_back(output_attrs[i].zp);
-    }
-    post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
-                 box_conf_threshold, nms_threshold, scale_w, scale_w, out_zps, out_scales, &detect_result_group);
-
-//    detect_result_group = NMS(detect_result_group, 0.4);
-
-    // Draw Objects
-    char text[256];
-    for (int i = 0; i < detect_result_group.count; i++)
-    {
-        detect_result_t *det_result = &(detect_result_group.results[i]);
-        sprintf(text, "%s %.1f%%", det_result->name, det_result->prop * 100);
-        printf("%s @ (%d %d %d %d) %f\n",
-               det_result->name,
-               det_result->box.left, det_result->box.top, det_result->box.right, det_result->box.bottom,
-               det_result->prop);
-        int x1 = det_result->box.left;
-        int y1 = det_result->box.top;
-        int x2 = det_result->box.right;
-        int y2 = det_result->box.bottom;
-        rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255, 0, 0, 255), 3);
-        putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
-
-        std::vector<cv::Scalar> pointColor= {cv::Scalar(255, 255, 255), cv::Scalar(0, 255, 0),
-                                             cv::Scalar(0, 0, 255), cv::Scalar(255, 255, 0)};
-        for (int i = 0; i < 4; ++i)
-        {
-            cv::circle(orig_img, cv::Point(det_result->box.keypoint.point[i * 2]
-                               , det_result->box.keypoint.point[i * 2 + 1]), 3
-                    , pointColor[i], -1);
+    for (size_t imgid = 0; imgid < size; ++imgid) {
+        auto image_name = imageNameList.at(imgid);
+//        printf("Read %s ...\n", image_name);
+        cv::Mat orig_img = cv::imread(image_name, 1);
+        if (!orig_img.data) {
+//            printf("cv::imread %s fail!\n", image_name);
+            return -1;
         }
-    }
+        cv::Mat img1;
+        cv::cvtColor(orig_img, img1, cv::COLOR_BGR2RGB);
 
-    imwrite("./out.jpg", orig_img);
-    ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
 
-    // loop test
-    int test_count = 10;
-    gettimeofday(&start_time, NULL);
-    for (int i = 0; i < test_count; ++i)
-    {
+        cv::Mat img;
+        LetterBox(img1, img, cv::Size(320, 320));
+        img_width = img.cols;
+        img_height = img.rows;
+
+        printf("img width = %d, img height = %d\n", img_width, img_height);
+
+        rknn_input inputs[1];
+        memset(inputs, 0, sizeof(inputs));
+        inputs[0].index = 0;
+        inputs[0].type = RKNN_TENSOR_UINT8;
+        inputs[0].size = width * height * channel;
+        inputs[0].fmt = RKNN_TENSOR_NHWC;
+        inputs[0].pass_through = 0;
+
+        void *resize_buf = malloc(height * width * channel);
+
+        src = wrapbuffer_virtualaddr((void *) img.data, img_width, img_height, RK_FORMAT_RGB_888);
+        dst = wrapbuffer_virtualaddr((void *) resize_buf, width, height, RK_FORMAT_RGB_888);
+        ret = imcheck(src, dst, src_rect, dst_rect);
+        if (IM_STATUS_NOERROR != ret) {
+            printf("%d, check error! %s", __LINE__, imStrError((IM_STATUS) ret));
+            return -1;
+        }
+        IM_STATUS STATUS = imresize(src, dst);
+        cv::Mat resize_img(cv::Size(width, height), CV_8UC3, resize_buf);
+        cv::imwrite("resize_input"+std::to_string(imgid)+".png", resize_img);
+
+        inputs[0].buf = resize_buf;
+        gettimeofday(&start_time, NULL);
         rknn_inputs_set(ctx, io_num.n_input, inputs);
+
+        rknn_output outputs[io_num.n_output];
+        memset(outputs, 0, sizeof(outputs));
+        for (int i = 0; i < io_num.n_output; i++) {
+            outputs[i].want_float = 0;
+        }
+
         ret = rknn_run(ctx, NULL);
         ret = rknn_outputs_get(ctx, io_num.n_output, outputs, NULL);
-#if PERF_WITH_POST
-        post_process((int8_t *)outputs[0].buf, (int8_t *)outputs[1].buf, (int8_t *)outputs[2].buf, height, width,
-                     box_conf_threshold, nms_threshold, scale_w, scale_h, out_zps, out_scales, &detect_result_group);
-#endif
-        ret = rknn_outputs_release(ctx, io_num.n_output, outputs);
+        gettimeofday(&stop_time, NULL);
+        printf("once run use %f ms\n",
+               (__get_us(stop_time) - __get_us(start_time)) / 1000);
+
+        //post process
+        float scale_w = (float) width / 640;
+        float scale_h = (float) height / 400;
+
+//        detect_result_group_t detect_result_group1;
+        detect_result_group_t detect_result_group;
+        std::vector<float> out_scales;
+        std::vector<int32_t> out_zps;
+        for (int i = 0; i < io_num.n_output; ++i) {
+            out_scales.push_back(output_attrs[i].scale);
+            out_zps.push_back(output_attrs[i].zp);
+        }
+        post_process((int8_t *) outputs[0].buf, (int8_t *) outputs[1].buf, (int8_t *) outputs[2].buf, height, width,
+                     box_conf_threshold, nms_threshold, scale_w, scale_w, out_zps, out_scales, &detect_result_group);
+
+        if (detect_result_group.count){
+            memset(&detect_result_group, 0, sizeof(detect_result_group_t));
+        }
+
+//        detect_result_group = NMS(detect_result_group1, 0.4);
+
+        // Draw Objects
+        char text[256];
+        for (int i = 0; i < detect_result_group.count; i++) {
+            detect_result_t *det_result = &(detect_result_group.results[i]);
+//            sprintf(text, "%s %.1f%%", "name", det_result->prop * 100);
+//            printf("%s @ (%d %d %d %d) %f\n",
+//                   det_result->name,
+//                   det_result->box.left, det_result->box.top, det_result->box.right, det_result->box.bottom,
+//                   det_result->prop);
+            int x1 = det_result->box.left;
+            int y1 = det_result->box.top;
+            int x2 = det_result->box.right;
+            int y2 = det_result->box.bottom;
+            rectangle(orig_img, cv::Point(x1, y1), cv::Point(x2, y2), cv::Scalar(255, 0, 0, 255), 3);
+            putText(orig_img, text, cv::Point(x1, y1 + 12), cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0));
+
+            std::vector<cv::Scalar> pointColor = {cv::Scalar(255, 255, 255), cv::Scalar(0, 255, 0),
+                                                  cv::Scalar(0, 0, 255), cv::Scalar(255, 255, 0)};
+            for (int i = 0; i < 4; ++i) {
+                cv::circle(orig_img,
+                           cv::Point(det_result->box.keypoint.point[i * 2], det_result->box.keypoint.point[i * 2 + 1]),
+                           3, pointColor[i], -1);
+            }
+        }
+
+//        imwrite("./out.jpg", orig_img);
+        cv::imwrite("../result/result_"+std::to_string(imgid)+".png",orig_img);
     }
-    gettimeofday(&stop_time, NULL);
-    printf("loop count = %d , average run  %f ms\n", test_count,
-           (__get_us(stop_time) - __get_us(start_time)) / 1000.0 / test_count);
-
-    deinitPostProcess();
-
-    // release
-    ret = rknn_destroy(ctx);
-
-    if (model_data)
-    {
-        free(model_data);
-    }
-
-    if (resize_buf)
-    {
-        free(resize_buf);
-    }
-
     return 0;
 }
