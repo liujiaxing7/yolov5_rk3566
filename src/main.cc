@@ -345,9 +345,9 @@ int main(int argc, char **argv)
         post_process((int8_t *) outputs[0].buf, (int8_t *) outputs[1].buf, (int8_t *) outputs[2].buf, height, width,
                      box_conf_threshold, nms_threshold, scale_w, scale_w, out_zps, out_scales, &detect_result_group);
 
-        if (detect_result_group.count){
-            memset(&detect_result_group, 0, sizeof(detect_result_group_t));
-        }
+//        if (detect_result_group.count){
+//            memset(&detect_result_group, 0, sizeof(detect_result_group_t));
+//        }
 
 //        detect_result_group = NMS(detect_result_group1, 0.4);
 
@@ -355,7 +355,7 @@ int main(int argc, char **argv)
         char text[256];
         for (int i = 0; i < detect_result_group.count; i++) {
             detect_result_t *det_result = &(detect_result_group.results[i]);
-//            sprintf(text, "%s %.1f%%", "name", det_result->prop * 100);
+            sprintf(text, "%s %.1f", det_result->name, det_result->prop * 100);
 //            printf("%s @ (%d %d %d %d) %f\n",
 //                   det_result->name,
 //                   det_result->box.left, det_result->box.top, det_result->box.right, det_result->box.bottom,

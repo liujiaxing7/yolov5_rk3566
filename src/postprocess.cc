@@ -458,8 +458,8 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
                              filterBoxes[n * boxLength + 10]/scale_w,filterBoxes[n * boxLength + 11] / scale_h-120};
         group->results[last_count].box.keypoint = keypoint;
 
-//        char *label = labels[id];
-//        strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
+        char *label = labels[id];
+        strncpy(group->results[last_count].name, label, OBJ_NAME_MAX_SIZE);
 
         // printf("result %2d: (%4d, %4d, %4d, %4d), %s\n", i, group->results[last_count].box.left, group->results[last_count].box.top,
         //        group->results[last_count].box.right, group->results[last_count].box.bottom, label);
